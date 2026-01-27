@@ -28,8 +28,8 @@ sequenceDiagram
             Job->>Job: Exec: playbooks/grafana/main.yaml
             
             %% Case B: Legacy
-            Zuul->>Job: [Trigger] playbooks/legacy/group-based-policy-dsvm-aim
-            Job->>Job: Exec: playbooks/legacy/.../run.yaml
+            Zuul->>Job: [Trigger] legacy-group-based-policy-dsvm-aim
+            Job->>Job: Exec: playbooks/legacy/group-based-policy-dsvm-aim/run.yaml
             
             %% Case C: Linters
             Zuul->>Job: [Trigger] openstack-zuul-jobs-linters
@@ -42,23 +42,37 @@ sequenceDiagram
             Note right of Dev: Pipeline Stopped<br/>(Requires Code Fix)
         else Success Case (All Passed)
             Zuul-->>Dev: ✅ Check Passed (Vote +1)
-            Note right of Zuul: Ready for Gate Pipeline
+            Note right of Zuul: Ready for Review & Gate
         end
     end
 
-    %% 2. GATE PIPELINE
+    %% 2. GATE PIPELINE (3-Way Logic)
     rect rgb(255, 253, 231)
-        Note right of Dev: 2. GATE Pipeline (After Approval)
-        Dev->>Zuul: Reviewer Approved (+2)
+        Note right of Dev: 2. GATE Pipeline (Review Process)
         
-        Zuul->>Nodes: Request 'ubuntu-bionic' (Clean Env)
+        alt Review Rejected (Vote -1/-2)
+            Dev->>Zuul: Reviewer Votes -1 or -2
+            Zuul-->>Dev: 🚫 Gate Not Triggered
+            Note right of Dev: Process Stopped<br/>(Needs Revision)
         
-        critical Critical Tests
-            Zuul->>Job: [Trigger] openafs-rpm-package-build
-            Job->>Job: Exec: playbooks/openafs-rpm-package-build/run.yaml
+        else Review Pending (Vote +1)
+            Dev->>Zuul: Reviewer Votes +1 (Looks Good)
+            Zuul-->>Dev: ⏳ No Gate Triggered
+            Note right of Dev: Waiting for Core Reviewer (+2)<br/>Status: Pending
+            
+        else Review Approved (Vote +2)
+            Dev->>Zuul: Core Reviewer Approved (+2)
+            Note right of Zuul: Gate Pipeline Triggered!
+            
+            Zuul->>Nodes: Request 'ubuntu-bionic' (Clean Env)
+            
+            critical Critical Tests
+                Zuul->>Job: [Trigger] openafs-rpm-package-build
+                Job->>Job: Exec: playbooks/openafs-rpm-package-build/run.yaml
+            end
+            
+            Note over Zuul: Auto-Merge upon success
         end
-        
-        Note over Zuul: Auto-Merge upon success
     end
 
     %% 3. PROMOTE PIPELINE
