@@ -20,19 +20,21 @@ sequenceDiagram
             Zuul->>Job: Load 'zuul.d/zuul-legacy-jobs.yaml'<br/>& 'zuul.d/project.yaml'
         end
 
-        %% [수정됨] loop 대신 '파일 변경 감지'에 따른 opt(선택적) 실행 구조로 변경
         Note right of Zuul: 🔍 File Matcher Check
 
+        %% Case A: Grafana
         opt If 'playbooks/grafana/**' changed
             Zuul->>Job: [Trigger] project-config-grafana
             Job->>Job: Exec: playbooks/grafana/main.yaml
         end
 
+        %% Case B: Legacy
         opt If 'playbooks/legacy/**' changed
             Zuul->>Job: [Trigger] legacy-group-based-policy-dsvm-aim
             Job->>Job: Exec: playbooks/legacy/group-based-policy-dsvm-aim/run.yaml
         end
 
+        %% Case C: Linters
         opt Always Run (Files: .*)
             Zuul->>Job: [Trigger] openstack-zuul-jobs-linters
         end
@@ -48,7 +50,7 @@ sequenceDiagram
         end
     end
 
-    %% 2. GATE PIPELINE (3-Way Logic) - 유지됨
+    %% 2. GATE PIPELINE (3-Way Logic)
     rect rgb(255, 253, 231)
         Note right of Dev: 2. GATE Pipeline (Review Process)
         
@@ -77,7 +79,7 @@ sequenceDiagram
         end
     end
 
-    %% 3. PROMOTE PIPELINE - 유지됨
+    %% 3. PROMOTE PIPELINE
     rect rgb(253, 235, 208)
         Note right of Dev: 3. PROMOTE Pipeline (Post-Merge)
         
