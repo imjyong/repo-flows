@@ -24,7 +24,7 @@ sequenceDiagram
             Note right of Zuul: Filter jobs based on changed files
             
             %% Case A: Grafana
-            Zuul->>Job: [Trigger] project-config-grafana 🧌
+            Zuul->>Job: [Trigger] project-config-grafana
             Job->>Job: Exec: playbooks/grafana/main.yaml
             
             %% Case B: Legacy
@@ -32,7 +32,7 @@ sequenceDiagram
             Job->>Job: Exec: playbooks/legacy/.../run.yaml
             
             %% Case C: Linters
-            Zuul->>Job: [Trigger] openstack-zuul-jobs-linters 🧌
+            Zuul->>Job: [Trigger] openstack-zuul-jobs-linters
         end
 
         %% Success/Failure Logic
