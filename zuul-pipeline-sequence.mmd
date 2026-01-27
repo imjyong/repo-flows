@@ -1,87 +1,101 @@
 sequenceDiagram
     autonumber
     actor Dev as Developer
+    participant Gerrit as Gerrit Code Review
     participant Zuul as Zuul System
     participant Nodes as Nodes (Infra)
     participant Job as Job Executor
     participant Secret as Secrets
 
-    %% 1. CHECK PIPELINE
+    %% ==========================================
+    %% 1. CHECK PIPELINE (검증 단계)
+    %% ==========================================
     rect rgb(235, 245, 251)
         Note right of Dev: 1. CHECK Pipeline (On PR Creation)
-        Dev->>Zuul: git push (Modify: playbooks/grafana/...)
         
-        Note right of Zuul: Detects 'project.yaml'<br/>Loads 'check' section
+        %% [흐름] Dev -> Gerrit -> Zuul (이벤트 전달)
+        Dev->>Gerrit: git push (Modify: playbooks/grafana/...)
+        Gerrit->>Zuul: Event: Patchset Created
+        
+        Note right of Zuul: Detects 'project.yaml'<br/>Loads 'check' pipeline context
 
-        par Resource Allocation
+        %% [병렬 처리] 자원 준비와 설정 계산을 동시에
+        par Resource & Config Eval
             Zuul->>Nodes: Request 'ubuntu-bionic-2-node'
             Nodes-->>Zuul: Assign Primary/Secondary IPs
-        and Job Configuration
-            Zuul->>Job: Load 'zuul.d/zuul-legacy-jobs.yaml'<br/>& 'zuul.d/project.yaml'
+        and Job Selection Logic
+            Note right of Zuul: Evaluate 'files' matchers<br/>(Decide which jobs to run)
         end
 
-        Note right of Zuul: 🔍 File Matcher Check
-
-        %% Case A: Grafana
+        %% [조건부 실행] 파일 변경 사항에 따라 실행할 Job 선택
         opt If 'playbooks/grafana/**' changed
             Zuul->>Job: [Trigger] project-config-grafana
             Job->>Job: Exec: playbooks/grafana/main.yaml
         end
 
-        %% Case B: Legacy
         opt If 'playbooks/legacy/**' changed
             Zuul->>Job: [Trigger] legacy-group-based-policy-dsvm-aim
             Job->>Job: Exec: playbooks/legacy/group-based-policy-dsvm-aim/run.yaml
         end
 
-        %% Case C: Linters
         opt Always Run (Files: .*)
             Zuul->>Job: [Trigger] openstack-zuul-jobs-linters
         end
 
-        %% Success/Failure Logic
-        alt Failure Case (Tests Failed)
-            Job--xZuul: ❌ Job Failed Report (e.g., Lint Error)
-            Zuul-->>Dev: 🚫 Check Failed (Vote -1)
-            Note right of Dev: Pipeline Stopped<br/>(Requires Code Fix)
-        else Success Case (All Passed)
-            Zuul-->>Dev: ✅ Check Passed (Vote +1)
-            Note right of Zuul: Ready for Review & Gate
+        %% [결과 보고] 성공/실패 여부를 Gerrit에 투표
+        alt Failure Case
+            Job--xZuul: ❌ Job Failed Report
+            Zuul-->>Gerrit: Report: Verified -1 (Check Failed)
+            Gerrit-->>Dev: Notification: Build Failed
+        else Success Case
+            Zuul-->>Gerrit: Report: Verified +1 (Check Passed)
+            Gerrit-->>Dev: Notification: Ready for Review
         end
     end
 
-    %% 2. GATE PIPELINE (3-Way Logic)
+    %% ==========================================
+    %% 2. GATE PIPELINE (승인 및 병합 단계)
+    %% ==========================================
     rect rgb(255, 253, 231)
         Note right of Dev: 2. GATE Pipeline (Review Process)
         
+        %% [흐름] 리뷰어의 투표 행위에 따라 분기
+        
         alt Review Rejected (Vote -1/-2)
-            Dev->>Zuul: Reviewer Votes -1 or -2
-            Zuul-->>Dev: 🚫 Gate Not Triggered
-            Note right of Dev: Process Stopped<br/>(Needs Revision)
+            Dev->>Gerrit: Vote -1 or -2
+            Gerrit->>Zuul: Event: Code-Review -1/-2
+            Zuul-->>Gerrit: 🚫 Gate Not Triggered
         
         else Review Pending (Vote +1)
-            Dev->>Zuul: Reviewer Votes +1 (Looks Good)
-            Zuul-->>Dev: ⏳ No Gate Triggered
-            Note right of Dev: Waiting for Core Reviewer (+2)<br/>Status: Pending
+            Dev->>Gerrit: Vote +1 (Looks Good)
+            Gerrit->>Zuul: Event: Code-Review +1
+            Zuul-->>Gerrit: ⏳ No Gate Triggered (Waiting for Core)
             
         else Review Approved (Vote +2)
-            Dev->>Zuul: Core Reviewer Approved (+2)
+            Dev->>Gerrit: Vote +2 (Core Reviewer)
+            Gerrit->>Zuul: Event: Code-Review +2
             Note right of Zuul: Gate Pipeline Triggered!
             
             Zuul->>Nodes: Request 'ubuntu-bionic' (Clean Env)
             
-            critical Critical Tests
+            critical Critical Tests (Must Pass)
                 Zuul->>Job: [Trigger] openafs-rpm-package-build
                 Job->>Job: Exec: playbooks/openafs-rpm-package-build/run.yaml
             end
             
-            Note over Zuul: Auto-Merge upon success
+            Note over Zuul, Gerrit: Auto-Merge upon success
+            Zuul->>Gerrit: Submit (Merge)
         end
     end
 
-    %% 3. PROMOTE PIPELINE
+    %% ==========================================
+    %% 3. PROMOTE PIPELINE (배포 단계)
+    %% ==========================================
     rect rgb(253, 235, 208)
         Note right of Dev: 3. PROMOTE Pipeline (Post-Merge)
+        
+        %% [흐름] 병합 완료(Ref-Updated) 이벤트가 트리거
+        Gerrit->>Zuul: Event: Ref-Updated (Merged)
         
         opt Secure Deployment
             Zuul->>Secret: 1. Lookup 'openstack_ci_ppa_upload_key'
