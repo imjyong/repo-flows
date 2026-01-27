@@ -1,0 +1,80 @@
+sequenceDiagram
+    autonumber
+    actor Dev as Developer
+    participant Zuul as Zuul System
+    participant Nodes as Nodes (Infra)
+    participant Job as Job Executor
+    participant Secret as Secrets
+
+    %% 1. CHECK PIPELINE
+    rect rgb(235, 245, 251)
+        Note right of Dev: 1. CHECK Pipeline (On PR Creation)
+        Dev->>Zuul: git push (Modify: playbooks/grafana/...)
+        
+        Note right of Zuul: Detects 'project.yaml'<br/>Loads 'check' section
+
+        par Resource Allocation
+            Zuul->>Nodes: Request 'ubuntu-bionic-2-node'
+            Nodes-->>Zuul: Assign Primary/Secondary IPs
+        and Job Configuration
+            Zuul->>Job: Load 'zuul.d/zuul-legacy-jobs.yaml'<br/>& 'zuul.d/project.yaml'
+        end
+
+        loop Execution (File Filter Applied)
+            Note right of Zuul: Filter jobs based on changed files
+            
+            %% Case A: Grafana
+            Zuul->>Job: [Trigger] project-config-grafana 🧌
+            Job->>Job: Exec: playbooks/grafana/main.yaml
+            
+            %% Case B: Legacy
+            Zuul->>Job: [Trigger] playbooks/legacy/group-based-policy-dsvm-aim
+            Job->>Job: Exec: playbooks/legacy/.../run.yaml
+            
+            %% Case C: Linters
+            Zuul->>Job: [Trigger] openstack-zuul-jobs-linters 🧌
+        end
+
+        %% Success/Failure Logic
+        alt Failure Case (Tests Failed)
+            Job--xZuul: ❌ Job Failed Report (e.g., Lint Error)
+            Zuul-->>Dev: 🚫 Check Failed (Vote -1)
+            Note right of Dev: Pipeline Stopped<br/>(Requires Code Fix)
+        else Success Case (All Passed)
+            Zuul-->>Dev: ✅ Check Passed (Vote +1)
+            Note right of Zuul: Ready for Gate Pipeline
+        end
+    end
+
+    %% 2. GATE PIPELINE
+    rect rgb(255, 253, 231)
+        Note right of Dev: 2. GATE Pipeline (After Approval)
+        Dev->>Zuul: Reviewer Approved (+2)
+        
+        Zuul->>Nodes: Request 'ubuntu-bionic' (Clean Env)
+        
+        critical Critical Tests
+            Zuul->>Job: [Trigger] openafs-rpm-package-build
+            Job->>Job: Exec: playbooks/openafs-rpm-package-build/run.yaml
+        end
+        
+        Note over Zuul: Auto-Merge upon success
+    end
+
+    %% 3. PROMOTE PIPELINE
+    rect rgb(253, 235, 208)
+        Note right of Dev: 3. PROMOTE Pipeline (Post-Merge)
+        
+        opt Secure Deployment
+            Zuul->>Secret: 1. Lookup 'openstack_ci_ppa_upload_key'
+            Secret-->>Zuul: 2. Decrypt Private Key
+            
+            Zuul->>Job: 3. Inject Key into Agent (SSH/GPG)
+            
+            Note right of Job: Job: openafs-rpm-package-build-promote
+            Job->>Job: Exec: playbooks/openafs-rpm-package-build/publish.yaml
+            Job->>Job: Upload to PPA Server
+        end
+    end
+
+    Zuul-->>Dev: Pipeline Complete Notification
