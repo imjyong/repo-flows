@@ -167,7 +167,6 @@ sequenceDiagram
                 Job->>Job: Publish to docs.openstack.org
             end
 
-            %% 번역 업데이트는 별도 워크플로우(translation-flow)에서 관리
             opt Translation Sync Check
                 Zuul->>Job: [Trigger] upstream-translation-update
                 Note right of Job: 상세 API 로직은 별도 가이드 참조
