@@ -5,6 +5,7 @@ sequenceDiagram
     participant Zuul as Zuul System
     participant Nodes as Nodes (Infra)
     participant Job as Job Executor
+    participant Secret as Secrets Store (Internal)
     participant Artifact as Artifact Store (Zuul)
 
     %% ==========================================
@@ -108,7 +109,14 @@ sequenceDiagram
         %% Gate 단계에서 생성된 결과물(RPM/Deb)은 Zuul Artifact로 저장됨
         critical Critical Tests & Build
             Zuul->>Job: [Trigger] openafs-rpm-package-build-*
-            Job->>Job: Exec: run.yaml (Build RPMs)
+            
+            %% [Release 서명 추가] RPM 서명을 위해 비밀 키 호출
+            rect rgb(255, 245, 235)
+                Job->>Secret: Fetch 'RPM_SIGNING_KEY'
+                Secret-->>Job: Provide Key (Temporary)
+            end
+            
+            Job->>Job: Exec: run.yaml (Build & Sign RPMs)
             Job-->>Artifact: Upload Built RPMs (Artifacts)
             Note right of Job: Artifacts saved for Promote phase
         end
@@ -157,6 +165,12 @@ sequenceDiagram
                 Zuul->>Job: [Trigger] publish-tox-docs-infra
                 Job->>Job: Build Sphinx Docs
                 Job->>Job: Publish to docs.openstack.org
+            end
+
+            %% 번역 업데이트는 별도 워크플로우(translation-flow)에서 관리
+            opt Translation Sync Check
+                Zuul->>Job: [Trigger] upstream-translation-update
+                Note right of Job: 상세 API 로직은 별도 가이드 참조
             end
         end
     end
