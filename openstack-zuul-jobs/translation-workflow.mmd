@@ -76,9 +76,9 @@ sequenceDiagram
             Note right of Zuul: Updates Scheduler with new job definitions
         end
 
-        par Promote Actions (Real Execution)
-            %% Scenario A: Exporting to Zanata
-            opt Scenario A: upstream_translation_update.sh
+        par Promote Actions
+            %% Export: Exporting to Zanata
+            opt Export: upstream_translation_update.sh
                 Zuul->>Job: [Trigger] upstream-translation-update
                 Job->>Secret: Fetch 'zanata_api_credentials'
                 Job->>Job: Exec: pybabel extract (.pot)
@@ -86,8 +86,8 @@ sequenceDiagram
                 Note right of Zanata: English Source Registered
             end
 
-            %% Scenario B: Proposing Translations (Import)
-            opt Scenario B: propose_translation_update.sh
+            %% Import: Proposing Translations
+            opt Import: propose_translation_update.sh
                 Zuul->>Job: [Trigger] propose-translation-update
                 Job->>Zanata: pull .po (zanata-cli pull)
                 Job->>Job: Exec: cleanup & compress (.po)
