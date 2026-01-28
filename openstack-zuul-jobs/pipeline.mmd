@@ -26,7 +26,7 @@ sequenceDiagram
             Note right of Zuul: Filter jobs by 'files' matcher
         end
 
-        %% [Always Run Group] - 배경색 rect 제거됨
+        %% [Always Run Group]
         %% Registry
         Zuul->>Job: [Trigger] opendev-buildset-registry
         Note right of Job: ✅ Setup Registry (Runs even if not used!)
@@ -54,11 +54,19 @@ sequenceDiagram
             Note right of Job: (Ignores Registry)
         end
 
+        %% [NEW] POST-RUN (청소 및 로그 수집)
+        rect rgb(238, 238, 238)
+            Note right of Zuul: 🧹 Automatic Post-Run (Cleanup)
+            Job->>Artifact: Upload Logs (console.log, syslog)
+            Zuul->>Nodes: Delete/Return Nodes (Cleanup)
+            Note right of Zuul: Resources released regardless of Success/Fail
+        end
+
         %% [CASE 1: CHECK 결과 분기]
         alt ❌ Check Failed (Verified -1)
             Job--xZuul: One or more Jobs Failed
             Zuul->>Gerrit: Vote: Verified -1
-            Note right of Dev: Action: Fix code & Push again
+            Note right of Dev: Action: Check Logs & Fix code
         else ✅ Check Passed (Verified +1)
             Job-->>Zuul: All Jobs Succeeded
             Zuul->>Gerrit: Vote: Verified +1
@@ -71,7 +79,7 @@ sequenceDiagram
     %% ==========================================
     rect rgb(255, 253, 231)
         Note right of Dev: 2. HUMAN REVIEW (Voting Decisions)
-        
+
         %% [CASE 2: 투표 종류별 분기]
         alt 🚫 Vote -1 or -2 (Reject)
             Dev->>Gerrit: Vote Code-Review -1/-2
@@ -97,7 +105,7 @@ sequenceDiagram
         Note right of Zuul: 3. GATE Pipeline (Triggered only by +2)
         
         Zuul->>Nodes: Request Clean Nodes
-        
+
         %% Gate 단계에서 생성된 결과물(RPM/Deb)은 Zuul Artifact로 저장됨
         critical Critical Tests & Build
             Zuul->>Job: [Trigger] openafs-rpm-package-build-*
@@ -106,6 +114,13 @@ sequenceDiagram
             Note right of Job: Artifacts saved for Promote phase
         end
         
+        %% [NEW] POST-RUN (Gate 단계도 동일하게 청소)
+        rect rgb(238, 238, 238)
+            Note right of Zuul: 🧹 Automatic Post-Run
+            Job->>Artifact: Upload Logs
+            Zuul->>Nodes: Delete/Return Nodes
+        end
+
         %% [CASE 3: GATE 결과 분기]
         alt ❌ Gate Failed
             Job--xZuul: Job Failed
@@ -145,6 +160,25 @@ sequenceDiagram
                 Job->>Job: Publish to docs.openstack.org
             end
         end
+    end
+
+    %% ==========================================
+    %% 5. PERIODIC PIPELINE (별도 실행)
+    %% ==========================================
+    rect rgb(245, 245, 245)
+        Note right of Zuul: 5. PERIODIC Pipeline (Runs Independently)
+        Note right of Zuul: Triggered by Timer (e.g., Daily 06:00)
+
+        Zuul->>Job: [Trigger] propose-translation-update
+        
+        Job->>Job: Exec Role: prepare-zanata-client
+        Note right of Job: 🛠️ Pre-flight Checks:<br/>1. Install Java & Zanata CLI<br/>2. Create zanata.ini (Credentials)<br/>3. Map Project (zanata.xml)
+        
+        Job->>Job: Exec Script: files/propose_translation_update.sh
+        Note right of Job: 🏃 Action:<br/>1. Pull Translations (Zanata)<br/>2. Git Add & Commit
+        
+        Job->>Gerrit: git push (New Translation Patchset)
+        Note right of Job: Creates a new Review automatically
     end
     
     Zuul-->>Dev: Pipeline Complete
