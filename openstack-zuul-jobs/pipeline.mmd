@@ -56,9 +56,9 @@ sequenceDiagram
 
         %% POST-RUN (청소 및 로그 수집)
         rect rgb(238, 238, 238)
-            Note right of Zuul: 🧹 Automatic Post-Run (Cleanup)
+            Note right of Zuul: 🧹 Automatic Post-Run
             Job->>Artifact: Upload Logs (console.log, syslog)
-            Zuul->>Nodes: Delete/Return Nodes (Cleanup)
+            Zuul->>Nodes: Delete/Return Nodes
             Note right of Zuul: Resources released regardless of Success/Fail
         end
 
