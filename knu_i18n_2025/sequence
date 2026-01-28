@@ -1,0 +1,89 @@
+sequenceDiagram
+    autonumber
+    actor User as User / Zuul CI
+    participant Script as Pipeline Controller<br>(ci.sh / local.sh)
+    participant Diff as Extraction Logic<br>(commit_diff.py / filter_pot.py)
+    participant Trans as translate.py
+    participant Utils as utils.py
+    participant LLM as LLM Engine<br>(Ollama / GPT / Claude)
+    participant Merge as merge_po.py
+    participant FS as File System
+
+    User->>Script: Trigger Workflow
+    
+    %% Config Loading
+    Script->>Script: Load config.yaml & Check Model
+
+    %% ==========================================
+    %% 1. EXTRACTION PHASE
+    %% ==========================================
+    rect rgb(235, 245, 251)
+        Note over Script, FS: Step 1: Extract Translation Targets
+        
+        alt CI Environment (ci.sh)
+            Script->>Diff: Run commit_diff.py
+            Diff->>FS: Clone/Update Git Repository
+            Diff->>FS: Git Checkout (Target vs Base Commit)
+            Diff->>Diff: Run 'pybabel extract' (Generate 2 POTs)
+            Diff->>Diff: Calculate Diff (New msgids only)
+        else Local Environment (local.sh)
+            Script->>Diff: Run filter_pot.py
+            Diff->>FS: Load existing local .po file
+            Diff->>Diff: Filter untranslated entries
+        end
+        
+        Diff->>FS: Save result to ./pot/*.pot
+        Diff-->>Script: Extraction Complete
+    end
+
+    %% ==========================================
+    %% 2. TRANSLATION PHASE
+    %% ==========================================
+    rect rgb(255, 250, 240)
+        Note over Script, LLM: Step 2: AI Translation Execution
+        
+        Script->>Trans: Execute translate.py
+        
+        %% Initialization
+        Trans->>Utils: init_environment()
+        Utils->>FS: Ensure directories (pot, po, glossary)
+
+        %% Context Loading
+        Trans->>Utils: load_glossary(lang)
+        Utils->>FS: Download/Load Glossary (.po/.json)
+        Trans->>Utils: load_fixed_examples(lang)
+        Utils->>FS: Load Few-Shot Examples (.json/.po)
+        
+        %% Translation Loop
+        Note over Trans, LLM: Parallel Processing (Thread Pool)
+        
+        loop For each Batch (Size=5)
+            Trans->>Trans: Build Prompt<br/>(System + Glossary + Examples + Target Strings)
+            Trans->>LLM: Request Translation (JSON Format)
+            LLM-->>Trans: Return Translated JSON
+            
+            alt JSON Parse Error
+                Trans->>Trans: Fallback (Regex extraction) or Skip
+            end
+        end
+
+        Trans->>FS: Save translated file to ./po/{model}/{lang}/
+        Trans->>FS: Append log to experiments.csv
+        Trans-->>Script: Translation Complete
+    end
+
+    %% ==========================================
+    %% 3. MERGE PHASE
+    %% ==========================================
+    rect rgb(240, 255, 240)
+        Note over Script, FS: Step 3: Merge Results
+        
+        Script->>Merge: Execute merge_po.py
+        Merge->>FS: Load Original Target File (.po)
+        Merge->>FS: Load AI Translated File (.po)
+        Merge->>Merge: Match msgid & Fill empty msgstr
+        Merge->>FS: Save Final Result to ./data/result/{lang}/
+        Merge-->>Script: Merge Complete
+    end
+
+    Script-->>User: Workflow Finished Successfully
