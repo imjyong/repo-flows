@@ -54,7 +54,7 @@ sequenceDiagram
             Note right of Job: (Ignores Registry)
         end
 
-        %% [NEW] POST-RUN (청소 및 로그 수집)
+        %% POST-RUN (청소 및 로그 수집)
         rect rgb(238, 238, 238)
             Note right of Zuul: 🧹 Automatic Post-Run (Cleanup)
             Job->>Artifact: Upload Logs (console.log, syslog)
@@ -114,7 +114,7 @@ sequenceDiagram
             Note right of Job: Artifacts saved for Promote phase
         end
         
-        %% [NEW] POST-RUN (Gate 단계도 동일하게 청소)
+        %% POST-RUN (Gate 단계도 동일하게 청소)
         rect rgb(238, 238, 238)
             Note right of Zuul: 🧹 Automatic Post-Run
             Job->>Artifact: Upload Logs
@@ -160,25 +160,6 @@ sequenceDiagram
                 Job->>Job: Publish to docs.openstack.org
             end
         end
-    end
-
-    %% ==========================================
-    %% 5. PERIODIC PIPELINE (별도 실행)
-    %% ==========================================
-    rect rgb(245, 245, 245)
-        Note right of Zuul: 5. PERIODIC Pipeline (Runs Independently)
-        Note right of Zuul: Triggered by Timer (e.g., Daily 06:00)
-
-        Zuul->>Job: [Trigger] propose-translation-update
-        
-        Job->>Job: Exec Role: prepare-zanata-client
-        Note right of Job: 🛠️ Pre-flight Checks:<br/>1. Install Java & Zanata CLI<br/>2. Create zanata.ini (Credentials)<br/>3. Map Project (zanata.xml)
-        
-        Job->>Job: Exec Script: files/propose_translation_update.sh
-        Note right of Job: 🏃 Action:<br/>1. Pull Translations (Zanata)<br/>2. Git Add & Commit
-        
-        Job->>Gerrit: git push (New Translation Patchset)
-        Note right of Job: Creates a new Review automatically
     end
     
     Zuul-->>Dev: Pipeline Complete
