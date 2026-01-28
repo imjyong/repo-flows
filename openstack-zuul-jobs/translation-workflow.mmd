@@ -21,38 +21,41 @@ sequenceDiagram
         Note right of Zuul: Loads 'zuul.d/project.yaml'<br/>Evaluates 'check' pipeline
 
         par Resource & Config Eval
-            Zuul->>Nodes: Request Node (Based on nodesets.yaml)
+            Zuul->>Nodes: Request Node (ubuntu/centos) Based on nodesets.yaml
             Nodes-->>Zuul: Assign Fresh Node
         and Job Selection Logic
             Note right of Zuul: Filter jobs (Match: playbooks/translation)
         end
 
-        %% [Always Run Group]
+        %% Linters
         Zuul->>Job: [Trigger] openstack-zuul-jobs-linters
         Job->>Job: Exec: tox -e linters
 
-        %% [Translation Specific Check]
+        %% Translation
         Zuul->>Job: [Trigger] upstream-translation-update
         Note right of Job: Mode: Dry-run (ERROR_ABORT=1)<br/>Checks if .pot can be extracted
         
-        %% POST-RUN (Cleanup)
+        %% POST-RUN (청소 및 로그 수집)
         rect rgb(238, 238, 238)
-            Note right of Zuul: 🧹 Automatic Post-Run (Cleanup)
-            Job->>Artifact: Upload .subunit stats & logs
-            Zuul->>Nodes: Delete/Return Nodes
+            Note right of Zuul: 🧹 Automatic Post-Run
+            Job->>Artifact:Upload Stats (subunit.gz) & Logs
+            Zuul->>Nodes: Delete/Return Nodes (Cleanup)
+            Note right of Zuul: Resources released regardless of Success/Fail
         end
 
         alt ❌ Check Failed (Verified -1)
             Job--xZuul: Extraction Failed
             Zuul->>Gerrit: Vote: Verified -1
+            Note right of Dev: Action: Check Logs for Babel/Lint errors
         else ✅ Check Passed (Verified +1)
             Job-->>Zuul: Extraction Succeeded
             Zuul->>Gerrit: Vote: Verified +1
+            Note right of Dev: Action: Wait for Review
         end
     end
 
     %% ==========================================
-    %% 2 & 3. HUMAN REVIEW & GATE (중략)
+    %% 2 & 3. HUMAN REVIEW & GATE PIPELINE (중략)
     %% ==========================================
     rect rgb(240, 240, 240)
         Note over Dev, Gerrit: [중략] 흐름은 pipeline.mmd와 동일함<br/>(Core Reviewer +2 승인 -> GATE 최종 빌드 테스트 -> Master Merge)
@@ -63,6 +66,7 @@ sequenceDiagram
     %% ==========================================
     rect rgb(253, 235, 208)
         Note right of Dev: 4. PROMOTE Pipeline (Post-Merge)
+
         Gerrit->>Zuul: Event: Ref-Updated (Merged)
         
         %% [추가된 Zuul 동기화 로직]
@@ -99,4 +103,4 @@ sequenceDiagram
         end
     end
     
-    Zuul-->>Dev: ✅ Translation Data Sync & Proposal Complete
+    Zuul-->>Dev: Translation Data Sync & Proposal Complete
