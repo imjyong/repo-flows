@@ -26,10 +26,17 @@ sequenceDiagram
             Note right of Zuul: Filter jobs by 'files' matcher
         end
 
-        %% [Always Run]
+        %% Minor Job: Registry Setup (Pre-requisite)
+        Zuul->>Job: [Trigger] opendev-buildset-registry
+        Note right of Job: Setup Container Registry<br/>(Required for Grafana)
+
         opt Always Run (No file filter)
             Zuul->>Job: [Trigger] openstack-zuul-jobs-linters
             Job->>Job: Exec: tox -e linters
+
+            %% Minor Job: Integration Test
+            Zuul->>Job: [Trigger] openstack-infra-extra-integration-noble
+            Job->>Job: Exec: tests/extra.yaml (Zanata Client etc)
         end
 
         %% [Conditional Run]
@@ -86,6 +93,7 @@ sequenceDiagram
         
         Zuul->>Nodes: Request Clean Nodes
         
+        %% Gate 단계에서 생성된 결과물(RPM/Deb)은 Zuul Artifact로 저장됨
         critical Critical Tests & Build
             Zuul->>Job: [Trigger] openafs-rpm-package-build-*
             Job->>Job: Exec: run.yaml (Build RPMs)
@@ -113,14 +121,25 @@ sequenceDiagram
         
         Gerrit->>Zuul: Event: Ref-Updated (Merged)
         
-        opt RPM Package Promote
-            Zuul->>Job: [Trigger] openafs-rpm-package-build-promote
-            
-            Job->>Artifact: Download Artifacts (from Gate job)
-            Artifact-->>Job: openafs-rpms.tar.gz
-            
-            Job->>Job: Exec: publish.yaml (Extract & Move)
-            Note right of Job: Publish to AFS/Repo (Not PPA)
+        par Promote Actions
+            %% RPM Promote 흐름 (PPA 키 사용 안함, Artifact 다운로드)
+            opt RPM Package Promote
+                Zuul->>Job: [Trigger] openafs-rpm-package-build-promote
+                
+                %% 이전 단계(Gate)의 결과물을 다운로드
+                Job->>Artifact: Download Artifacts (from Gate job)
+                Artifact-->>Job: openafs-rpms.tar.gz
+                
+                Job->>Job: Exec: publish.yaml (Extract & Move)
+                Note right of Job: Publish to AFS/Repo (Not PPA)
+            end
+
+            %% Minor Job: Docs Promote
+            opt Docs Promote
+                Zuul->>Job: [Trigger] publish-tox-docs-infra
+                Job->>Job: Build Sphinx Docs
+                Job->>Job: Publish to docs.openstack.org
+            end
         end
     end
     
