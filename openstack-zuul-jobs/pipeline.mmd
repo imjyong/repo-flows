@@ -26,23 +26,21 @@ sequenceDiagram
             Note right of Zuul: Filter jobs by 'files' matcher
         end
 
-        %% [Always Run Group]
-        rect rgb(240, 248, 255)
-            %% Registry
-            Zuul->>Job: [Trigger] opendev-buildset-registry
-            Note right of Job: ✅ Setup Registry (Runs even if not used!)
+        %% [Always Run Group] - 배경색 rect 제거됨
+        %% Registry
+        Zuul->>Job: [Trigger] opendev-buildset-registry
+        Note right of Job: ✅ Setup Registry (Runs even if not used!)
 
-            %% Linters
-            Zuul->>Job: [Trigger] openstack-zuul-jobs-linters
-            Job->>Job: Exec: tox -e linters
+        %% Linters
+        Zuul->>Job: [Trigger] openstack-zuul-jobs-linters
+        Job->>Job: Exec: tox -e linters
 
-            %% Integration
-            Zuul->>Job: [Trigger] openstack-infra-extra-integration-noble
-            Job->>Job: Exec: tests/extra.yaml
+        %% Integration
+        Zuul->>Job: [Trigger] openstack-infra-extra-integration-noble
+        Job->>Job: Exec: tests/extra.yaml
 
-            %% RPM Build (Check phase)
-            Zuul->>Job: [Trigger] openafs-rpm-package-build-*
-        end
+        %% RPM Build (Check phase)
+        Zuul->>Job: [Trigger] openafs-rpm-package-build-*
 
         %% [Conditional Run]
         opt If 'playbooks/grafana/**' changed
