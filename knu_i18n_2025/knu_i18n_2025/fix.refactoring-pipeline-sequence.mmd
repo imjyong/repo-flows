@@ -1,0 +1,92 @@
+sequenceDiagram
+    autonumber
+    actor User as User / Zuul CI
+    participant Script as Script Runner<br/>(scripts/ci.sh | local.sh)
+    participant Config as src.config<br/>(config_loader.py)
+    participant Proc as src.processors<br/>(commit_diff / filter_pot)
+    participant Core as src.core<br/>(translate.py)
+    participant Utils as src.utils<br/>(utils.py)
+    participant LLM as LLM Engine<br/>(Ollama / GPT / Claude)
+    participant Merge as src.processors<br/>(merge_po.py)
+    participant FS as File System
+
+    User->>Script: Trigger Workflow
+    
+    %% ==========================================
+    %% 1. EXTRACTION PHASE
+    %% ==========================================
+    rect rgb(235, 245, 251)
+        Note over Script, FS: Step 1: Extraction Phase (Module Call)
+        
+        alt CI Environment (ci.sh)
+            Script->>Proc: python -m src.processors.commit_diff
+            Proc->>Config: load_config()
+            Proc->>FS: Clone/Update Git Repo
+            Proc->>FS: Checkout Target & Base Commits
+            Proc->>Proc: Extract POT & Calculate Diff
+        else Local Environment (local.sh)
+            Script->>Proc: python -m src.processors.filter_pot
+            Proc->>Config: load_config()
+            Proc->>FS: Load existing local .po
+            Proc->>Proc: Filter untranslated entries
+        end
+        
+        Proc->>FS: Save result to ./output/pot/*.pot
+        Proc-->>Script: Extraction Complete
+    end
+
+    %% ==========================================
+    %% 2. TRANSLATION PHASE
+    %% ==========================================
+    rect rgb(255, 250, 240)
+        Note over Script, LLM: Step 2: AI Translation Phase (Core Logic)
+        
+        Script->>Core: python -m src.core.translate
+        
+        %% Initialization
+        Core->>Config: load_config() & setup_logger()
+        Core->>Utils: init_environment()
+        Utils->>FS: Ensure directories (output/po, resources/glossary)
+
+        %% Resource Loading (Cached)
+        Core->>Utils: load_glossary() (LRU Cache)
+        Utils->>FS: Load/Download resources/glossary/*.json
+        
+        Core->>Utils: load_fixed_examples()
+        Utils->>FS: Load resources/po-example/*.json
+
+        %% Translation Loop
+        Note over Core, LLM: Parallel Execution (ThreadPoolExecutor)
+        
+        loop For each Batch
+            Core->>Core: Construct Prompt (System + Context)
+            Core->>LLM: Request Translation (JSON Format)
+            LLM-->>Core: Return JSON/Text response
+            
+            alt Error / Invalid JSON
+                Core->>Core: Retry Logic / Parsing Fallback
+            end
+        end
+
+        Core->>FS: Save translated file to ./output/po/{model}/{lang}/
+        Core->>Utils: save_experiment_log()
+        Utils->>FS: Append log to experiments.csv
+        Core-->>Script: Translation Complete
+    end
+
+    %% ==========================================
+    %% 3. MERGE PHASE
+    %% ==========================================
+    rect rgb(240, 255, 240)
+        Note over Script, FS: Step 3: Merge Phase (Processor)
+        
+        Script->>Merge: python -m src.processors.merge_po
+        Merge->>Config: load_config()
+        Merge->>FS: Load Original Target File (.po)
+        Merge->>FS: Load AI Translated File (.po)
+        Merge->>Merge: Match msgid & Update msgstr
+        Merge->>FS: Save Final Result to ./data/result/{lang}/
+        Merge-->>Script: Pipeline Complete
+    end
+
+    Script-->>User: Workflow Finished Successfully
