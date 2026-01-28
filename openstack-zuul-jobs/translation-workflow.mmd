@@ -1,54 +1,102 @@
 sequenceDiagram
     autonumber
-    participant Dev as Developer
-    participant Git as Gerrit (Source Code)
-    participant Zuul as Zuul Executor
-    participant Script as Scripts (A/B/C)
-    participant Zanata as Zanata (Translation Site)
-
-    Note over Script: 📂 Directory: roles/prepare-zanata-client/files/
+    actor Dev as Developer
+    participant Gerrit as Gerrit Code Review
+    participant Zuul as Zuul System
+    participant Nodes as Nodes (Infra)
+    participant Job as Job Executor
+    participant Secret as Secrets Store (Internal)
+    participant Artifact as Artifact Store (Zuul)
+    participant Zanata as Zanata Site
 
     %% ==========================================
-    %% 시나리오 A: 업로드 (Export)
-    %% 개발자가 영어를 추가했을 때 -> Zanata로 보냄
+    %% 1. CHECK PIPELINE (Verification: msgid Extraction Test)
     %% ==========================================
-    rect rgb(230, 240, 255)
-        Note over Zuul, Zanata: 🚀 Scenario A: Post-Merge (Upload Source)<br/>Execution: upstream_translation_update.sh
+    rect rgb(235, 245, 251)
+        Note right of Dev: 1. CHECK Pipeline (On PR Creation)
         
-        Dev->>Git: Merge Code (with new English strings)
-        Git->>Zuul: Trigger 'Promote' Pipeline
+        Dev->>Gerrit: git push (Add new English msgid)
+        Gerrit->>Zuul: Event: Patchset Created
         
-        Zuul->>Script: Run 'upstream_translation_update.sh'
-        
-        rect rgb(255, 255, 240)
-            Note right of Script: 📚 Load Library
-            Script->>Script: Source 'common_translation_update.sh'<br/>(Load venv, git config functions)
+        Note right of Zuul: Loads 'zuul.d/project.yaml'<br/>Evaluates 'check' pipeline
+
+        par Resource & Config Eval
+            Zuul->>Nodes: Request Node (Based on nodesets.yaml)
+            Nodes-->>Zuul: Assign Fresh Node
+        and Job Selection Logic
+            Note right of Zuul: Filter jobs (Match: playbooks/translation)
         end
+
+        %% [Always Run Group]
+        Zuul->>Job: [Trigger] openstack-zuul-jobs-linters
+        Job->>Job: Exec: tox -e linters
+
+        %% [Translation Specific Check]
+        Zuul->>Job: [Trigger] upstream-translation-update
+        Note right of Job: Mode: Dry-run (ERROR_ABORT=1)<br/>Checks if .pot can be extracted
         
-        Script->>Git: Extract Messages (.pot)
-        Script->>Zanata: Upload Source Strings (Push)
-        Note right of Zanata: Translators can now see<br/>new English sentences!
+        %% POST-RUN (Cleanup)
+        rect rgb(238, 238, 238)
+            Note right of Zuul: 🧹 Automatic Post-Run (Cleanup)
+            Job->>Artifact: Upload .subunit stats & logs
+            Zuul->>Nodes: Delete/Return Nodes
+        end
+
+        alt ❌ Check Failed (Verified -1)
+            Job--xZuul: Extraction Failed
+            Zuul->>Gerrit: Vote: Verified -1
+        else ✅ Check Passed (Verified +1)
+            Job-->>Zuul: Extraction Succeeded
+            Zuul->>Gerrit: Vote: Verified +1
+        end
     end
 
     %% ==========================================
-    %% 시나리오 B: 다운로드 (Import)
-    %% 번역가가 번역을 완료했을 때 -> 코드로 가져옴
+    %% 2 & 3. HUMAN REVIEW & GATE (중략)
     %% ==========================================
-    rect rgb(235, 255, 235)
-        Note over Zuul, Zanata: 📥 Scenario B: Periodic (Download Translations)<br/>Execution: propose_translation_update.sh
-        
-        Zuul->>Zuul: Timer Trigger (e.g., Daily 06:00)
-        Zuul->>Script: Run 'propose_translation_update.sh'
-        
-        rect rgb(255, 255, 240)
-            Note right of Script: 📚 Load Library
-            Script->>Script: Source 'common_translation_update.sh'
-        end
-        
-        Script->>Zanata: Pull Translated Strings (.po)
-        Zanata-->>Script: Download Korean/Japanese etc.
-        
-        Script->>Git: Git Add & Commit
-        Script->>Git: Git Review (Create Patchset)
-        Note right of Git: New PR created:<br/>"Import translations from Zanata"
+    rect rgb(240, 240, 240)
+        Note over Dev, Gerrit: [중략] 흐름은 pipeline.mmd와 동일함<br/>(Core Reviewer +2 승인 -> GATE 최종 빌드 테스트 -> Master Merge)
     end
+
+    %% ==========================================
+    %% 4. PROMOTE PIPELINE (Actual Sync & Proposal)
+    %% ==========================================
+    rect rgb(253, 235, 208)
+        Note right of Dev: 4. PROMOTE Pipeline (Post-Merge)
+        Gerrit->>Zuul: Event: Ref-Updated (Merged)
+        
+        %% [추가된 Zuul 동기화 로직]
+        rect rgb(242, 242, 242)
+            Note right of Zuul: Zuul Configuration Sync
+            Zuul->>Zuul: Re-reads 'zuul.d/project.yaml'
+            Note right of Zuul: Updates Scheduler with new job definitions
+        end
+
+        par Promote Actions (Real Execution)
+            %% Scenario A: Exporting to Zanata
+            opt Scenario A: upstream_translation_update.sh
+                Zuul->>Job: [Trigger] upstream-translation-update
+                Job->>Secret: Fetch 'zanata_api_credentials'
+                Job->>Job: Exec: pybabel extract (.pot)
+                Job->>Zanata: push .pot (zanata-cli push)
+                Note right of Zanata: English Source Registered
+            end
+
+            %% Scenario B: Proposing Translations (Import)
+            opt Scenario B: propose_translation_update.sh
+                Zuul->>Job: [Trigger] propose-translation-update
+                Job->>Zanata: pull .po (zanata-cli pull)
+                Job->>Job: Exec: cleanup & compress (.po)
+                Job->>Gerrit: git review (Topic: zanata/translations)
+                Note right of Gerrit: Automated Translation Review Created
+            end
+            
+            %% Docs Promote (병렬 실행)
+            opt Docs Promote
+                Zuul->>Job: [Trigger] publish-tox-docs-infra
+                Job->>Job: Build & Publish Sphinx Docs
+            end
+        end
+    end
+    
+    Zuul-->>Dev: ✅ Translation Data Sync & Proposal Complete
