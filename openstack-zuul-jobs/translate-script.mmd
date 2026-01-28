@@ -1,0 +1,54 @@
+sequenceDiagram
+    autonumber
+    participant Dev as Developer
+    participant Git as Gerrit (Source Code)
+    participant Zuul as Zuul Executor
+    participant Script as Scripts (A/B/C)
+    participant Zanata as Zanata (Translation Site)
+
+    Note over Script: 📂 Directory: roles/prepare-zanata-client/files/
+
+    %% ==========================================
+    %% 시나리오 A: 업로드 (Export)
+    %% 개발자가 영어를 추가했을 때 -> Zanata로 보냄
+    %% ==========================================
+    rect rgb(230, 240, 255)
+        Note over Zuul, Zanata: 🚀 Scenario A: Post-Merge (Upload Source)<br/>Execution: upstream_translation_update.sh
+        
+        Dev->>Git: Merge Code (with new English strings)
+        Git->>Zuul: Trigger 'Promote' Pipeline
+        
+        Zuul->>Script: Run 'upstream_translation_update.sh'
+        
+        rect rgb(255, 255, 240)
+            Note right of Script: 📚 Load Library
+            Script->>Script: Source 'common_translation_update.sh'<br/>(Load venv, git config functions)
+        end
+        
+        Script->>Git: Extract Messages (.pot)
+        Script->>Zanata: Upload Source Strings (Push)
+        Note right of Zanata: Translators can now see<br/>new English sentences!
+    end
+
+    %% ==========================================
+    %% 시나리오 B: 다운로드 (Import)
+    %% 번역가가 번역을 완료했을 때 -> 코드로 가져옴
+    %% ==========================================
+    rect rgb(235, 255, 235)
+        Note over Zuul, Zanata: 📥 Scenario B: Periodic (Download Translations)<br/>Execution: propose_translation_update.sh
+        
+        Zuul->>Zuul: Timer Trigger (e.g., Daily 06:00)
+        Zuul->>Script: Run 'propose_translation_update.sh'
+        
+        rect rgb(255, 255, 240)
+            Note right of Script: 📚 Load Library
+            Script->>Script: Source 'common_translation_update.sh'
+        end
+        
+        Script->>Zanata: Pull Translated Strings (.po)
+        Zanata-->>Script: Download Korean/Japanese etc.
+        
+        Script->>Git: Git Add & Commit
+        Script->>Git: Git Review (Create Patchset)
+        Note right of Git: New PR created:<br/>"Import translations from Zanata"
+    end
