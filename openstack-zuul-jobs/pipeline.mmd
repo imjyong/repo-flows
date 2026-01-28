@@ -29,7 +29,7 @@ sequenceDiagram
         %% [Always Run Group]
         %% Registry
         Zuul->>Job: [Trigger] opendev-buildset-registry
-        Note right of Job: ✅ Setup Registry (Runs even if not used!)
+        Note right of Job: Setup Registry (Runs even if not used!)
 
         %% Linters
         Zuul->>Job: [Trigger] openstack-zuul-jobs-linters
@@ -45,7 +45,7 @@ sequenceDiagram
         %% [Conditional Run]
         opt If 'playbooks/grafana/**' changed
             Zuul->>Job: [Trigger] project-config-grafana
-            Job->>Job: 🐳 Docker Run (Uses the Registry)
+            Job->>Job: Docker Run (Uses the Registry)
             Job->>Job: Exec: playbooks/grafana/main.yaml
         end
         
