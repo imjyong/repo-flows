@@ -166,11 +166,6 @@ sequenceDiagram
                 Job->>Job: Build Sphinx Docs
                 Job->>Job: Publish to docs.openstack.org
             end
-
-            opt Translation Sync Check
-                Zuul->>Job: [Trigger] upstream-translation-update
-                Note right of Job: 번역 업데이트 로직은 별도 파일 참조
-            end
         end
     end
     
