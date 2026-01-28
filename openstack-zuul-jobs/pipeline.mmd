@@ -58,7 +58,7 @@ sequenceDiagram
         rect rgb(238, 238, 238)
             Note right of Zuul: 🧹 Automatic Post-Run
             Job->>Artifact: Upload Logs (console.log, syslog)
-            Zuul->>Nodes: Delete/Return Nodes
+            Zuul->>Nodes: Delete/Return Nodes (Cleanup)
             Note right of Zuul: Resources released regardless of Success/Fail
         end
 
