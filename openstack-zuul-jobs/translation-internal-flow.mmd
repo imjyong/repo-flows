@@ -1,0 +1,43 @@
+sequenceDiagram
+    autonumber
+    participant Job as Job Executor (Ansible)
+    participant Up as upstream_translation_update.sh
+    participant Pr as propose_translation_update.sh
+    participant Lib as common_translation_update.sh
+    participant API as External (Zanata/Gerrit)
+
+    Note over Job, API: [Export] Extract and Upload New English Strings (Upstream)
+    
+    Job->>Up: Execute script
+    Up->>Lib: source common_translation_update.sh
+    Lib-->>Up: Load common functions & env variables
+    
+    Up->>Lib: Call setup_logging()
+    Up->>Lib: Call check_params() (Validate API Key, Project name)
+    
+    Up->>Lib: Call extract_messages()
+    Note right of Lib: Generate .pot via pybabel extract
+    
+    Up->>Lib: Call upload_pot_to_zanata()
+    Lib->>API: zanata-cli push (HTTP API)
+    Note left of API: Register English source in Zanata
+
+    Note over Job, API: [Import] Import Translations & Propose to Gerrit (Propose)
+
+    Job->>Pr: Execute script
+    Pr->>Lib: source common_translation_update.sh
+    
+    Pr->>Lib: Call download_po_from_zanata()
+    Lib->>API: zanata-cli pull (HTTP API)
+    Note left of API: Download .po files
+    
+    Pr->>Lib: Call process_translations()
+    Note right of Lib: Organize and merge translation files
+    
+    Pr->>Lib: Call submit_to_gerrit()
+    Lib->>API: git review (Gerrit API)
+    Note left of API: Register changes as Translation Update Topic
+
+    Note over Job, API: [Common] Cleanup Phase
+    Job->>Lib: Call finish()
+    Note right of Lib: Remove temp directories & Print summary
