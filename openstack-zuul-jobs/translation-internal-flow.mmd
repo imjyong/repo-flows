@@ -6,38 +6,71 @@ sequenceDiagram
     participant Lib as common_translation_update.sh
     participant API as External (Zanata/Gerrit)
 
-    Note over Job, API: [Export] Extract and Upload New English Strings (Upstream)
-    
-    Job->>Up: Execute script
+    %% ============================================================
+    %% 1번(Check) & 4번(Promote) 파이프라인 매핑
+    %% ============================================================
+    Note over Job, API: 🛑 [Pipeline 1(Check) & 4(Promote)] Execute 'upstream' Script
+
+    Job->>Up: Execute upstream_translation_update.sh
     Up->>Lib: source common_translation_update.sh
-    Lib-->>Up: Load common functions & env variables
+    Lib-->>Up: Load functions & env variables
     
+    %% [추가됨] 초기화 상세 과정
     Up->>Lib: Call setup_logging()
     Up->>Lib: Call check_params() (Validate API Key, Project name)
     
     Up->>Lib: Call extract_messages()
-    Note right of Lib: Generate .pot via pybabel extract
-    
-    Up->>Lib: Call upload_pot_to_zanata()
-    Lib->>API: zanata-cli push (HTTP API)
-    Note left of API: Register English source in Zanata
+    Note right of Lib: [Common] Generate .pot (pybabel extract)
 
-    Note over Job, API: [Import] Import Translations & Propose to Gerrit (Propose)
+    %% 여기서 갈림길이 생깁니다 (Check는 멈추고, Promote는 보냄)
+    alt If Pipeline == 1. CHECK
+        Note right of Up: 🛑 STOP here (Dry-run Mode)
+        Note right of Up: Verify extraction success & Exit
+    else If Pipeline == 4. PROMOTE
+        Note right of Up: 🚀 PROCEED (Real-run Mode)
+        Up->>Lib: Call upload_pot_to_zanata()
+        Lib->>API: zanata-cli push (HTTP API)
+        Note left of API: Register English Source (msgid)
+    end
 
-    Job->>Pr: Execute script
+    %% ============================================================
+    %% 5번(Periodic) 파이프라인 매핑 [상세 로직 추가됨]
+    %% ============================================================
+    Note over Job, API: ⏰ [Pipeline 5(Periodic)] Execute 'propose' Script
+
+    Job->>Pr: Execute propose_translation_update.sh
     Pr->>Lib: source common_translation_update.sh
+    Lib-->>Pr: Load functions & env variables
+
+    %% [추가됨] 초기화 상세 과정 (Propose 단계도 동일하게 수행)
+    Pr->>Lib: Call setup_logging()
+    Pr->>Lib: Call check_params()
     
+    %% 1. 다운로드
     Pr->>Lib: Call download_po_from_zanata()
     Lib->>API: zanata-cli pull (HTTP API)
-    Note left of API: Download .po files
+    Note left of API: Download Translations (.po)
     
-    Pr->>Lib: Call process_translations()
-    Note right of Lib: Organize and merge translation files
-    
-    Pr->>Lib: Call submit_to_gerrit()
-    Lib->>API: git review (Gerrit API)
-    Note left of API: Register changes as Translation Update Topic
+    %% 2. 압축 (최적화)
+    Pr->>Lib: Call compress_po_files()
+    Note right of Lib: Optimize .po files (Remove lines, Compressing)
 
-    Note over Job, API: [Common] Cleanup Phase
+    %% 3. 필터링 (변경사항 검증)
+    Pr->>Lib: Call filter_commits()
+    Note right of Lib: Check if changes are valid (Ignore timestamp only changes)
+
+    %% 4. 제출 (조건부 실행 - send_patch)
+    alt No Valid Changes
+        Note right of Pr: 🚫 Skip Commit (Nothing to update)
+    else Has Valid Changes
+        Pr->>Lib: Call send_patch()
+        Lib->>API: git review (Topic: zanata/translations)
+        Note left of API: Submit Patch to Gerrit
+    end
+
+    %% ============================================================
+    %% 공통 종료 처리
+    %% ============================================================
+    Note over Job, API: 🧹 [All Pipelines] Cleanup Phase
     Job->>Lib: Call finish()
-    Note right of Lib: Remove temp directories & Print summary
+    Note right of Lib: Remove temp dirs & Logs
