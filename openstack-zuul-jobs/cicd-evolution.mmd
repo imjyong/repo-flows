@@ -131,14 +131,15 @@ sequenceDiagram
             Zuul->>Nodes: Delete/Return Nodes
         end
 
-        alt ❌ Gate Failed
+        alt ❌ Gate Failed (Verified -1)
             Job--xZuul: Job Failed
-            Zuul->>Gerrit: Vote: Verified -1 (Merge Rejected)
-            Note right of Zuul: Merge Canceled
-        else ✅ Gate Passed
+            Zuul->>Gerrit: Vote: Verified -1
+            Note right of Gerrit: Change remains open (Not merged)
+        else ✅ Gate Passed (Verified +2)
             Job-->>Zuul: Job Succeeded
-            Zuul->>Gerrit: Submit (Merge Request)
-            Note right of Zuul: Merged to Master
+            Zuul->>Gerrit: Vote: Verified +2
+            Zuul->>Gerrit: Calls Gerrit submit API
+            Note right of Gerrit: Auto-Submit Triggered (Merged to Master)
         end
     end
 
