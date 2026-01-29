@@ -79,19 +79,24 @@ sequenceDiagram
     rect rgb(255, 253, 231)
         Note right of Dev: 2. HUMAN REVIEW (Voting Decisions)
 
-        alt 🚫 Vote -1 or -2 (Reject)
+        alt 🚫 Vote -1/-2 (Code-Review)
             Dev->>Gerrit: Vote Code-Review -1/-2
-            Gerrit->>Zuul: Event: Code-Review -1/-2
-            Note right of Zuul: Action: None (Gate Not Triggered)
+            Gerrit->>Zuul: Event: Review Updated
+            Note right of Zuul: Action: None
             
-        else ⏳ Vote +1 (LGTM)
-            Dev->>Gerrit: Vote Code-Review +1
-            Gerrit->>Zuul: Event: Code-Review +1
-            Note right of Zuul: Action: None (Wait for Core Approval)
+        else ⏳ Vote +1 (Workflow)
+            Dev->>Gerrit: Vote Workflow +1
+            Gerrit->>Zuul: Event: Review Updated
+            Note right of Zuul: Action: None
             
-        else 🚀 Vote +2 (Core Approved)
+        else ⏳ Vote +2 (Code-Review)
             Dev->>Gerrit: Vote Code-Review +2
-            Gerrit->>Zuul: Event: Code-Review +2
+            Gerrit->>Zuul: Event: Review Updated
+            Note right of Zuul: Action: None
+            
+        else 🚀 Full Approval (CR+2 & WF+1)
+            Dev->>Gerrit: Vote Code-Review +2, Workflow +1
+            Gerrit->>Zuul: Event: Review Updated (Change Approved)
             Note right of Zuul: Action: Trigger GATE Pipeline
         end
     end
@@ -100,7 +105,7 @@ sequenceDiagram
     %% 3. GATE PIPELINE EXECUTION
     %% ==========================================
     rect rgb(220, 237, 200)
-        Note right of Zuul: 3. GATE Pipeline (Triggered only by +2)
+        Note right of Zuul: 3. GATE Pipeline (Triggered by CR+2 & WF+1)
         
         Zuul->>Nodes: Request Clean Nodes
 
