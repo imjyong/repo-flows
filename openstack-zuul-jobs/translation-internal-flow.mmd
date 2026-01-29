@@ -15,14 +15,14 @@ sequenceDiagram
     Up->>Lib: source common_translation_update.sh
     Lib-->>Up: Load functions & env variables
     
-    %% [추가됨] 초기화 상세 과정
+    %% 초기화
     Up->>Lib: Call setup_logging()
     Up->>Lib: Call check_params() (Validate API Key, Project name)
     
     Up->>Lib: Call extract_messages()
     Note right of Lib: [Common] Generate .pot (pybabel extract)
 
-    %% 여기서 갈림길이 생깁니다 (Check는 멈추고, Promote는 보냄)
+    %% Check는 멈추고, Promote는 보냄
     alt If Pipeline == 1. CHECK
         Note right of Up: 🛑 STOP here (Dry-run Mode)
         Note right of Up: Verify extraction success & Exit
@@ -34,7 +34,7 @@ sequenceDiagram
     end
 
     %% ============================================================
-    %% 5번(Periodic) 파이프라인 매핑 [상세 로직 추가됨]
+    %% 5번(Periodic) 파이프라인 매핑
     %% ============================================================
     Note over Job, API: ⏰ [Pipeline 5(Periodic)] Execute 'propose' Script
 
@@ -42,7 +42,7 @@ sequenceDiagram
     Pr->>Lib: source common_translation_update.sh
     Lib-->>Pr: Load functions & env variables
 
-    %% [추가됨] 초기화 상세 과정 (Propose 단계도 동일하게 수행)
+    %% 초기화 (Propose 단계도 동일하게 수행)
     Pr->>Lib: Call setup_logging()
     Pr->>Lib: Call check_params()
     
