@@ -25,7 +25,7 @@ sequenceDiagram
         end
 
         par Resource & Config Eval
-            Zuul->>Nodes: Request Node (ubuntu/centos) Based on nodeset from speculative config
+            Zuul->>Nodes: Request Node (ubuntu/centos) Based on nodeset definition (speculative config)
             Nodes-->>Zuul: Assign Fresh Node
         and Job Selection Logic
             Note right of Zuul: Filter jobs (Match: playbooks/translation)
@@ -33,10 +33,13 @@ sequenceDiagram
 
         %% Linters
         Zuul->>Job: [Trigger] openstack-zuul-jobs-linters
+        Note right of Zuul: Jobs are executed via Ansible playbooks by Zuul executor
+        Note right of Job: Ansible: Job environment setup (Clone repo, install tox)
         Job->>Job: Exec: tox -e linters
 
         %% Translation (Dry-run)
         Zuul->>Job: [Trigger] upstream-translation-update
+        Note right of Job: Ansible: Job environment setup (Install zanata client, POT tools)
         Note right of Job: Script: common_translation_update.sh<br/>Mode: Dry-run (Extraction Test Only)
         
         %% POST-RUN (청소 및 로그 수집)
@@ -83,6 +86,7 @@ sequenceDiagram
             %% Export: 소스(POT) 전송은 머지 직후 실행
             opt Export: upstream_translation_update.sh
                 Zuul->>Job: [Trigger] upstream-translation-update
+                Note right of Job: Ansible: Setup production environment
                 Job->>Secret: Fetch 'zanata_api_credentials'
                 Job->>Job: Exec: common_translation_update.sh (Extract)
                 
@@ -99,6 +103,7 @@ sequenceDiagram
             %% Docs Promote (병렬 실행)
             opt Docs Promote
                 Zuul->>Job: [Trigger] publish-tox-docs-infra
+                Note right of Job: Ansible: Install Sphinx & plugins
                 Job->>Job: Build & Publish Sphinx Docs
             end
         end
