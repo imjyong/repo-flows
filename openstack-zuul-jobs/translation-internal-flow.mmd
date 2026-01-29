@@ -9,7 +9,7 @@ sequenceDiagram
     %% ============================================================
     %% 1번(Check) & 4번(Promote) 파이프라인 매핑
     %% ============================================================
-    Note over Job, API: 🛑 [Pipeline 1(Check) & 4(Promote)] Execute 'upstream' Script
+    Note over Job, API: [Pipeline 1(Check) & 4(Promote)] Execute 'upstream' Script
 
     Job->>Up: Execute upstream_translation_update.sh
     Up->>Lib: source common_translation_update.sh
@@ -36,7 +36,7 @@ sequenceDiagram
     %% ============================================================
     %% 5번(Periodic) 파이프라인 매핑
     %% ============================================================
-    Note over Job, API: ⏰ [Pipeline 5(Periodic)] Execute 'propose' Script
+    Note over Job, API: [Pipeline 5(Periodic)] Execute 'propose' Script
 
     Job->>Pr: Execute propose_translation_update.sh
     Pr->>Lib: source common_translation_update.sh
