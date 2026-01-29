@@ -57,7 +57,7 @@ sequenceDiagram
         else ✅ Check Passed (Verified +1)
             Job-->>Zuul: Extraction Succeeded
             Zuul->>Gerrit: Vote: Verified +1
-            Note right of Dev: Action: Await human review (+2)
+            Note right of Dev: Action: Await human review (+2) and Workflow +1
         end
     end
 
