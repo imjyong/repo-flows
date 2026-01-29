@@ -18,7 +18,10 @@ sequenceDiagram
         Dev->>Gerrit: git push (Add new English msgid)
         Gerrit->>Zuul: Event: Patchset Created
         
-        Note right of Zuul: Loads 'zuul.d/project.yaml'<br/>Evaluates 'check' pipeline
+        rect rgb(224, 247, 250)
+            Note right of Zuul: Dynamic Config Sync
+            Note right of Zuul: Reads temporary 'zuul.d/project.yaml'
+        end
 
         par Resource & Config Eval
             Zuul->>Nodes: Request Node (ubuntu/centos) Based on nodesets.yaml
@@ -69,8 +72,8 @@ sequenceDiagram
 
         Gerrit->>Zuul: Event: Ref-Updated (Merged)
         
-        %% [추가된 Zuul 동기화 로직]
-        rect rgb(242, 242, 242)
+        %% Zuul 동기화 로직
+        rect rgb(224, 247, 250)
             Note right of Zuul: Zuul Configuration Sync
             Zuul->>Zuul: Re-reads 'zuul.d/project.yaml'
             Note right of Zuul: Updates Scheduler with new job definitions
@@ -81,7 +84,6 @@ sequenceDiagram
             opt Export: upstream_translation_update.sh
                 Zuul->>Job: [Trigger] upstream-translation-update
                 Job->>Secret: Fetch 'zanata_api_credentials'
-                
                 %% Script Execution Reference
                 Job->>Job: Exec: common_translation_update.sh (Extract)
                 
@@ -103,7 +105,6 @@ sequenceDiagram
                 
                 %% Script Execution Reference
                 Job->>Job: Exec: common_translation_update.sh (Compress & Commit)
-                
                 Job->>Gerrit: git review (Topic: zanata/translations)
                 Note right of Gerrit: Automated Translation Review Created
             end
@@ -119,10 +120,14 @@ sequenceDiagram
     %% ==========================================
     %% 5. PERIODIC SYNC PIPELINE (Daily Early Morning)
     %% ==========================================
-    rect rgb(232, 245, 233)
+    rect rgb(255, 253, 231)
         Note right of Zuul: 5. PERIODIC Pipeline (Scheduled Sync)
         
         Zuul->>Zuul: Triggered by Timer (Daily 04:00 AM)
+        
+        rect rgb(224, 247, 250)
+            Note right of Zuul: Zuul Config Check (Current Master)
+        end
         
         Zuul->>Job: [Trigger] propose-translation-update
         Job->>Secret: Fetch 'zanata_api_credentials'
@@ -134,7 +139,6 @@ sequenceDiagram
         
         %% Script Execution Reference
         Job->>Job: Exec: common_translation_update.sh (Process)
-        
         Job->>Gerrit: git review (Topic: zanata/translations)
         Note right of Gerrit: Daily Translation Proposal Created
 
