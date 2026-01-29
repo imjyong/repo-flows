@@ -18,13 +18,14 @@ sequenceDiagram
         Dev->>Gerrit: git push (Add new English msgid)
         Gerrit->>Zuul: Event: Patchset Created
         
+        %% 전체 Sync가 아닌 해당 패치셋에 대한 임시 로딩(Speculative)
         rect rgb(224, 247, 250)
-            Note right of Zuul: Dynamic Config Sync
-            Note right of Zuul: Reads temporary 'zuul.d/project.yaml'
+            Note right of Zuul: Speculative Config Evaluation
+            Note right of Zuul: Loads config from change (per-change context)
         end
 
         par Resource & Config Eval
-            Zuul->>Nodes: Request Node (ubuntu/centos) Based on nodesets.yaml
+            Zuul->>Nodes: Request Node (ubuntu/centos) Based on nodeset from speculative config
             Nodes-->>Zuul: Assign Fresh Node
         and Job Selection Logic
             Note right of Zuul: Filter jobs (Match: playbooks/translation)
@@ -34,9 +35,9 @@ sequenceDiagram
         Zuul->>Job: [Trigger] openstack-zuul-jobs-linters
         Job->>Job: Exec: tox -e linters
 
-        %% Translation
+        %% Translation (Dry-run)
         Zuul->>Job: [Trigger] upstream-translation-update
-        Note right of Job: Script: common_translation_update.sh<br/>Mode: Dry-run (ERROR_ABORT=1)
+        Note right of Job: Script: common_translation_update.sh<br/>Mode: Dry-run (Extraction Test Only)
         
         %% POST-RUN (청소 및 로그 수집)
         rect rgb(238, 238, 238)
@@ -49,11 +50,11 @@ sequenceDiagram
         alt ❌ Check Failed (Verified -1)
             Job--xZuul: Extraction Failed
             Zuul->>Gerrit: Vote: Verified -1
-            Note right of Dev: Action: Check Logs for Babel/Lint errors
+            Note right of Dev: Action: Check translation extraction & linter logs
         else ✅ Check Passed (Verified +1)
             Job-->>Zuul: Extraction Succeeded
             Zuul->>Gerrit: Vote: Verified +1
-            Note right of Dev: Action: Wait for Review
+            Note right of Dev: Action: Await human review (+2)
         end
     end
 
@@ -65,26 +66,24 @@ sequenceDiagram
     end
 
     %% ==========================================
-    %% 4. PROMOTE PIPELINE (Actual Sync & Proposal)
+    %% 4. PROMOTE PIPELINE (Post-Merge Actions)
     %% ==========================================
     rect rgb(253, 235, 208)
         Note right of Dev: 4. PROMOTE Pipeline (Post-Merge)
 
         Gerrit->>Zuul: Event: Ref-Updated (Merged)
         
-        %% Zuul 동기화 로직
+        %% 머지 후 표준 설정 적용
         rect rgb(224, 247, 250)
-            Note right of Zuul: Zuul Configuration Sync
-            Zuul->>Zuul: Re-reads 'zuul.d/project.yaml'
-            Note right of Zuul: Updates Scheduler with new job definitions
+            Note right of Zuul: Canonical config in effect (master)
+            Note right of Zuul: Scheduler continues with merged config
         end
 
         par Promote Actions
-            %% Export: Exporting to Zanata
+            %% Export: 소스(POT) 전송은 머지 직후 실행
             opt Export: upstream_translation_update.sh
                 Zuul->>Job: [Trigger] upstream-translation-update
                 Job->>Secret: Fetch 'zanata_api_credentials'
-                %% Script Execution Reference
                 Job->>Job: Exec: common_translation_update.sh (Extract)
                 
                 rect rgb(232, 245, 233)
@@ -94,20 +93,8 @@ sequenceDiagram
                 Note right of Zanata: English Source Registered
             end
 
-            %% Import: Proposing Translations
-            opt Import: propose_translation_update.sh
-                Zuul->>Job: [Trigger] propose-translation-update
-                
-                rect rgb(232, 245, 233)
-                    Note right of Job: 🌐 External API Call: PULL
-                    Job->>Zanata: pull .po (zanata-cli pull)
-                end
-                
-                %% Script Execution Reference
-                Job->>Job: Exec: common_translation_update.sh (Compress & Commit)
-                Job->>Gerrit: git review (Topic: zanata/translations)
-                Note right of Gerrit: Automated Translation Review Created
-            end
+            %% 번역본 Pull 작업은 보통 Periodic에서만 수행
+            Note over Zuul, Job: (Note: propose-translation-update is typically Periodic only)
             
             %% Docs Promote (병렬 실행)
             opt Docs Promote
@@ -126,9 +113,10 @@ sequenceDiagram
         Zuul->>Zuul: Triggered by Timer (Daily 04:00 AM)
         
         rect rgb(224, 247, 250)
-            Note right of Zuul: Zuul Config Check (Current Master)
+            Note right of Zuul: Uses canonical config from master
         end
         
+        %% 번역본 Import는 새벽에 실행되는 작업이 수행
         Zuul->>Job: [Trigger] propose-translation-update
         Job->>Secret: Fetch 'zanata_api_credentials'
         
