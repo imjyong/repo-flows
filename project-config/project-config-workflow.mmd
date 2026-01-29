@@ -1,0 +1,149 @@
+sequenceDiagram
+    autonumber
+    actor Dev as Developer
+    participant Gerrit as Gerrit Code Review
+    participant Zuul as Zuul System (Scheduler)
+    participant Nodes as Nodes (Infra)
+    participant Job as Job Executor
+    actor Reviewer as Infra Core Team
+    participant Repo as Project-Config Repo
+    participant Prod as Production (System/GitHub)
+
+    %% ==========================================
+    %% 1. CHECK PIPELINE (Verification)
+    %% ==========================================
+    rect rgb(235, 245, 251)
+        Note right of Dev: 1. CHECK Pipeline (On PR Creation)
+        
+        Dev->>Gerrit: git push (Modify: projects.yaml, acls/...)
+        Gerrit->>Zuul: Event: Patchset Created
+        
+        %% Speculative Loading (Inner Rect Removed)
+        Note right of Zuul: Speculative Config Evaluation<br/>(Loads config from change context)
+
+        par Resource & Config Eval
+            Zuul->>Nodes: Request Node (ubuntu-focal/centos)
+            Nodes-->>Zuul: Assign Fresh Node
+        and Job Selection Logic
+            Note right of Zuul: Evaluate 'zuul.d/*.yaml'<br/>Apply 'files:' matchers & pipeline config
+            Note right of Zuul: (Not based on tox.ini directly)
+        end
+
+        %% Job: Linters
+        Zuul->>Job: [Trigger] openstack-zuul-jobs-linters
+        Note right of Job: Ansible: Setup workspace
+        Job->>Job: Exec: tox -e linters (Implementation defined in tox.ini)
+
+        %% Job: Gerrit Config Validation
+        Zuul->>Job: [Trigger] project-config-gerrit
+        Note right of Job: Validates YAML structure & ACL integrity
+        Job->>Job: Exec: tox -e gerrit
+        Note right of Job: Script: tools/check_valid_gerrit_projects.py
+
+        %% Job: IRC Config Validation
+        opt Matcher: 'accessbot/**'
+            Zuul->>Job: [Trigger] project-config-irc
+            Job->>Job: Exec: tox -e irc
+        end
+
+        %% POST-RUN (Cleanup)
+        %% (Inner Rect Removed)
+        Note right of Zuul: 🧹 Automatic Post-Run
+        Job->>Gerrit: Upload Logs (console.log, error.log)
+        Zuul->>Nodes: Delete/Return Nodes (Cleanup)
+        Note right of Zuul: Resources released regardless of Success/Fail
+
+        alt ❌ Check Failed (Verified -1)
+            Job--xZuul: Result: FAILURE
+            Zuul->>Gerrit: Report: Verified -1
+            Note right of Dev: Action: Fix YAML syntax or Logic
+        else ✅ Check Passed (Verified +1)
+            Job-->>Zuul: Result: SUCCESS
+            Zuul->>Gerrit: Report: Verified +1
+            Note right of Dev: Action: Wait for Core Review
+        end
+    end
+
+    %% ==========================================
+    %% 2. HUMAN REVIEW (Policy Check)
+    %% ==========================================
+    rect rgb(255, 253, 231)
+        Note right of Dev: 2. HUMAN REVIEW (Infra Core Team)
+        
+        Note right of Zuul: Zuul is idle (Waiting for events)
+
+        alt 🚫 Vote -1/-2 (Code-Review)
+            Dev->>Gerrit: Vote Code-Review -1
+            
+        else ⏳ Vote +2 (Code-Review Only)
+            Dev->>Gerrit: Vote Code-Review +2 (Approved)
+            Note right of Gerrit: Waiting for Workflow +1
+            
+        else 🚀 Full Approval (CR+2 & WF+1)
+            Dev->>Gerrit: Vote Code-Review +2, Workflow +1
+            Gerrit->>Zuul: Event: Review Updated (Change Approved)
+            Note right of Zuul: Action: Trigger GATE Pipeline
+        end
+    end
+
+    %% ==========================================
+    %% 3. GATE PIPELINE (Final Safety Check)
+    %% ==========================================
+    rect rgb(220, 237, 200)
+        Note right of Zuul: 3. GATE Pipeline (Pre-Merge Check)
+        
+        Note right of Zuul: Context: Master + Dependency Resolved State
+        Zuul->>Nodes: Request Clean Nodes
+
+        critical Final Validation (Re-run)
+            Zuul->>Job: [Trigger] project-config-gerrit
+            Job->>Job: Exec: tox -e gerrit (Re-validate against current master)
+            
+            Zuul->>Job: [Trigger] openstack-zuul-jobs-linters
+            Job->>Job: Exec: tox -e linters
+        end
+        
+        %% POST-RUN
+        Note right of Zuul: 🧹 Automatic Post-Run
+        Zuul->>Nodes: Delete/Return Nodes
+
+        alt ❌ Gate Failed (Verified -1)
+            Zuul->>Gerrit: Report: Verified -1 / Merge Failed
+            Note right of Gerrit: Change remains open (Reset Workflow)
+        else ✅ Gate Passed (Verified +2)
+            Zuul->>Gerrit: Report: Verified +2
+            Zuul->>Gerrit: Submit Change (Merge to Master)
+            Note right of Gerrit: Merged
+        end
+    end
+
+    %% ==========================================
+    %% 4. POST-MERGE & DEPLOYMENT actions
+    %% ==========================================
+    rect rgb(253, 235, 208)
+        Note right of Dev: 4. PROMOTE Pipeline (Post-Merge)
+        
+        Gerrit->>Zuul: Event: Ref-Updated (Merged)
+        
+        Note right of Zuul: ⚙️ Canonical config updated (master)
+
+        par Infrastructure Sync Actions
+            %% Action 1: GitHub Mirror
+            opt Conditional (Repo/Branch specific)
+                Zuul->>Job: [Trigger] maintain-github-mirror
+                Job->>Prod: Sync git repos to GitHub (Mirror)
+            end
+
+            %% Action 2: Documentation
+            opt Publish Infra Docs
+                Zuul->>Job: [Trigger] infra-docs
+                Job->>Prod: Publish to docs.openstack.org
+            end
+            
+            %% Action 3: System Apply
+            Note over Repo, Prod: 🔄 Async Pull Model
+            Note right of Prod: Puppet Agents / Ansible (Periodic Pull)
+            Prod->>Repo: Fetch latest project-config
+            Prod->>Prod: Apply: Create Projects, Update ACLs
+        end
+    end
