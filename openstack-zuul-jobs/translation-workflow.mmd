@@ -33,12 +33,12 @@ sequenceDiagram
 
         %% Translation
         Zuul->>Job: [Trigger] upstream-translation-update
-        Note right of Job: Mode: Dry-run (ERROR_ABORT=1)<br/>Checks if .pot can be extracted
+        Note right of Job: Script: common_translation_update.sh<br/>Mode: Dry-run (ERROR_ABORT=1)
         
         %% POST-RUN (청소 및 로그 수집)
         rect rgb(238, 238, 238)
             Note right of Zuul: 🧹 Automatic Post-Run
-            Job->>Artifact:Upload Stats (subunit.gz) & Logs
+            Job->>Artifact:Upload Stats ($JOBNAME.subunit.gz) & Logs
             Zuul->>Nodes: Delete/Return Nodes (Cleanup)
             Note right of Zuul: Resources released regardless of Success/Fail
         end
@@ -81,16 +81,29 @@ sequenceDiagram
             opt Export: upstream_translation_update.sh
                 Zuul->>Job: [Trigger] upstream-translation-update
                 Job->>Secret: Fetch 'zanata_api_credentials'
-                Job->>Job: Exec: pybabel extract (.pot)
-                Job->>Zanata: push .pot (zanata-cli push)
+                
+                %% Script Execution Reference
+                Job->>Job: Exec: common_translation_update.sh (Extract)
+                
+                rect rgb(232, 245, 233)
+                    Note right of Job: 🌐 External API Call: PUSH
+                    Job->>Zanata: push .pot (zanata-cli push)
+                end
                 Note right of Zanata: English Source Registered
             end
 
             %% Import: Proposing Translations
             opt Import: propose_translation_update.sh
                 Zuul->>Job: [Trigger] propose-translation-update
-                Job->>Zanata: pull .po (zanata-cli pull)
-                Job->>Job: Exec: cleanup & compress (.po)
+                
+                rect rgb(232, 245, 233)
+                    Note right of Job: 🌐 External API Call: PULL
+                    Job->>Zanata: pull .po (zanata-cli pull)
+                end
+                
+                %% Script Execution Reference
+                Job->>Job: Exec: common_translation_update.sh (Compress & Commit)
+                
                 Job->>Gerrit: git review (Topic: zanata/translations)
                 Note right of Gerrit: Automated Translation Review Created
             end
@@ -100,6 +113,36 @@ sequenceDiagram
                 Zuul->>Job: [Trigger] publish-tox-docs-infra
                 Job->>Job: Build & Publish Sphinx Docs
             end
+        end
+    end
+
+    %% ==========================================
+    %% 5. PERIODIC SYNC PIPELINE (Daily Early Morning)
+    %% ==========================================
+    rect rgb(232, 245, 233)
+        Note right of Zuul: 5. PERIODIC Pipeline (Scheduled Sync)
+        
+        Zuul->>Zuul: Triggered by Timer (Daily 04:00 AM)
+        
+        Zuul->>Job: [Trigger] propose-translation-update
+        Job->>Secret: Fetch 'zanata_api_credentials'
+        
+        rect rgb(232, 245, 233)
+            Note right of Job: 🌐 External API Call: PULL
+            Job->>Zanata: pull .po (zanata-cli pull)
+        end
+        
+        %% Script Execution Reference
+        Job->>Job: Exec: common_translation_update.sh (Process)
+        
+        Job->>Gerrit: git review (Topic: zanata/translations)
+        Note right of Gerrit: Daily Translation Proposal Created
+
+        %% POST-RUN (청소)
+        rect rgb(238, 238, 238)
+            Note right of Zuul: 🧹 Automatic Post-Run (Cleanup)
+            Job->>Artifact:Upload Stats ($JOBNAME.subunit.gz) & Logs
+            Zuul->>Nodes: Delete/Return Nodes
         end
     end
     
