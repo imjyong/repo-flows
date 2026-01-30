@@ -18,21 +18,22 @@ sequenceDiagram
         Dev->>Gerrit: git push (Modify: projects.yaml, acls/...)
         Gerrit->>Zuul: Event: Patchset Created
         
-        %% Speculative Loading (Inner Rect Removed)
-        Note right of Zuul: Speculative Config Evaluation<br/>(Loads config from change context)
+        %% Speculative Loading
+        rect rgb(224, 247, 250)
+            Note right of Zuul: Speculative Config Evaluation<br/>(Loads config from change context)
+        end
 
         par Resource & Config Eval
             Zuul->>Nodes: Request Node (ubuntu-focal/centos)
             Nodes-->>Zuul: Assign Fresh Node
         and Job Selection Logic
             Note right of Zuul: Evaluate 'zuul.d/*.yaml'<br/>Apply 'files:' matchers & pipeline config
-            Note right of Zuul: (Not based on tox.ini directly)
         end
 
         %% Job: Linters
         Zuul->>Job: [Trigger] openstack-zuul-jobs-linters
         Note right of Job: Ansible: Setup workspace
-        Job->>Job: Exec: tox -e linters (Implementation defined in tox.ini)
+        Job->>Job: Exec: tox -e linters (tox.ini)
 
         %% Job: Gerrit Config Validation
         Zuul->>Job: [Trigger] project-config-gerrit
@@ -46,12 +47,13 @@ sequenceDiagram
             Job->>Job: Exec: tox -e irc
         end
 
-        %% POST-RUN (Cleanup)
-        %% (Inner Rect Removed)
-        Note right of Zuul: 🧹 Automatic Post-Run
-        Job->>Gerrit: Upload Logs (console.log, error.log)
-        Zuul->>Nodes: Delete/Return Nodes (Cleanup)
-        Note right of Zuul: Resources released regardless of Success/Fail
+        %% POST-RUN (청소 및 로그 수집)
+        rect rgb(238, 238, 238)
+            Note right of Zuul: 🧹 Automatic Post-Run
+            Job->>Gerrit: Upload Logs (console.log, error.log)
+            Zuul->>Nodes: Delete/Return Nodes (Cleanup)
+            Note right of Zuul: Resources released regardless of Success/Fail
+        end
 
         alt ❌ Check Failed (Verified -1)
             Job--xZuul: Result: FAILURE
@@ -103,9 +105,12 @@ sequenceDiagram
             Job->>Job: Exec: tox -e linters
         end
         
-        %% POST-RUN
-        Note right of Zuul: 🧹 Automatic Post-Run
-        Zuul->>Nodes: Delete/Return Nodes
+        %% POST-RUN (Gate 단계 청소)
+        rect rgb(238, 238, 238)
+            Note right of Zuul: 🧹 Automatic Post-Run
+            Job->>Gerrit: Upload Logs
+            Zuul->>Nodes: Delete/Return Nodes
+        end
 
         alt ❌ Gate Failed (Verified -1)
             Zuul->>Gerrit: Report: Verified -1 / Merge Failed
@@ -125,18 +130,25 @@ sequenceDiagram
         
         Gerrit->>Zuul: Event: Ref-Updated (Merged)
         
-        Note right of Zuul: ⚙️ Canonical config updated (master)
+        rect rgb(224, 247, 250)
+            Note right of Zuul: ⚙️ Canonical config updated (master)
+        end
 
         par Infrastructure Sync Actions
             %% Action 1: GitHub Mirror
             opt Conditional (Repo/Branch specific)
                 Zuul->>Job: [Trigger] maintain-github-mirror
-                Job->>Prod: Sync git repos to GitHub (Mirror)
+                
+                rect rgb(232, 245, 233)
+                    Note right of Job: 🌐 External API Call
+                    Job->>Prod: Sync git repos to GitHub (Mirror)
+                end
             end
 
             %% Action 2: Documentation
             opt Publish Infra Docs
                 Zuul->>Job: [Trigger] infra-docs
+                Job->>Job: Exec: generate_infra_index.py
                 Job->>Prod: Publish to docs.openstack.org
             end
             
